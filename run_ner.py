@@ -48,6 +48,12 @@ flags.DEFINE_string(
 
 flags.DEFINE_bool("output_score", False, "Whether to output ner score.")
 
+flags.DEFINE_bool("dice_loss", False, "Whether to use dice loss.")
+flags.DEFINE_bool("focal_loss", False, "Whether to use focal loss.")
+flags.DEFINE_float(
+    "neg_sample", 1.0,
+    "negative sampling ratio")
+
 flags.DEFINE_string(
     "bert_config_file", None,
     "The config json file corresponding to the pre-trained BERT model."
@@ -113,7 +119,6 @@ flags.DEFINE_float(
 flags.DEFINE_integer(
     "save_checkpoints_steps", 1000,
     "How often to save the model checkpoint.")
-
 
 flags.DEFINE_bool("horovod", False, "Whether to use Horovod for multi-gpu runs")
 flags.DEFINE_bool("amp", False, "Whether to enable AMP ops. When false, uses TF32 on A100 and FP32 on V100 GPUS.")
@@ -450,6 +455,7 @@ def create_model(bert_config, is_training, input_ids, input_mask,
     # cls_layer = model.get_pooled_output()
 
     output_layer = model.get_sequence_output()
+    position_embedding = model.get_position_embedding_output()
 
     batch_size, seq_length, hidden_size = modeling.get_shape_list(output_layer,expected_rank=3)
 
@@ -459,8 +465,12 @@ def create_model(bert_config, is_training, input_ids, input_mask,
 
     # Magic Number
     size = 150
-    starts = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
-    ends = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    position_embedding = tf.tile(position_embedding,[batch_size,1,1])
+    position_embedding = tf.stop_gradient(position_embedding)
+    starts = tf.layers.dense(tf.concat([output_layer,position_embedding],axis=-1),size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    ends = tf.layers.dense(tf.concat([output_layer,position_embedding],axis=-1),size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    # starts = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    # ends = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
     
     if is_training:
       starts = tf.nn.dropout(starts,keep_prob=0.9)
@@ -493,6 +503,36 @@ def create_model(bert_config, is_training, input_ids, input_mask,
 
     candidate_ner_scores = tf.boolean_mask(tf.reshape(candidate_ner_scores,[-1,num_labels]),flattened_candidate_scores_mask)
     return candidate_ner_scores
+
+def focal_loss(logits, labels, gamma=3):
+    epsilon = 1.e-9
+    y_pred = tf.nn.softmax(logits,dim=-1)
+    y_pred = y_pred + epsilon # to avoid 0.0 in log
+    loss = -labels*tf.pow((1-y_pred),gamma)*tf.log(y_pred)
+    return loss
+
+
+def self_adjust_dice_loss(logits,
+                          labels,
+                          alpha=1.0,
+                          gamma=1.0):
+    """self-adjusting dice loss, refer to "Dice Loss for Data-imbalanced NLP Tasks" paper
+
+    Args:
+        logits: The unscaled probabilities.
+        labels: The true labels.
+        alpha (float): a factor to push down the weight of easy examples
+        gamma (float): a factor added to both the nominator and the denominator for smoothing purposes
+    """
+
+    probs = tf.nn.softmax(logits)
+    batch_size = tf.shape(logits)[0]
+    indices = tf.stack([tf.range(batch_size),labels],axis=1)
+    probs = tf.gather_nd(probs,indices)
+    probs_with_factor = ((1 - probs) ** alpha) * probs
+    loss = 1 - (2 * probs_with_factor + gamma) / (probs_with_factor + 1 + gamma)
+    return loss
+
 
 def model_fn_builder(bert_config, num_labels, init_checkpoint=None, learning_rate=None,
                      num_train_steps=None, num_warmup_steps=None,
@@ -543,7 +583,19 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint=None, learning_rat
                 "positive_accuracy": accuracy[1] * 100,
                 "negative_accuracy": negative_accuracy[1] * 100
             }
-            total_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=gold_labels,logits=candidate_ner_scores)
+            if FLAGS.focal_loss:
+                gold_labels = tf.one_hot(gold_labels,depth=num_labels,dtype=tf.float32)
+                total_loss = focal_loss(candidate_ner_scores,gold_labels)
+            elif FLAGS.dice_loss:
+                total_loss = self_adjust_dice_loss(candidate_ner_scores,gold_labels)
+            else:
+                total_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=gold_labels,logits=candidate_ner_scores)
+
+            if 0.0 < FLAGS.neg_sample < 1.0:
+                sample_vals = tf.random.uniform(shape=tf.shape(gold_labels))
+                masks = tf.where_v2(tf.logical_and(gold_labels<=0,sample_vals>=FLAGS.neg_sample),0.0,1.0)
+                total_loss = masks * total_loss
+
             batch_size = tf.shape(input_ids)[0]
             total_loss = tf.reduce_sum(total_loss) / tf.to_float(batch_size)
             train_op = optimization.create_optimizer(
@@ -735,7 +787,7 @@ def main(_):
             predict_examples = processor.get_dev_examples(FLAGS.data_dir)
         else:
             predict_examples = processor.get_test_examples(FLAGS.data_dir)
-        predict_file = os.path.join(FLAGS.output_dir, '../predict.tf_record')
+        predict_file = os.path.join(FLAGS.output_dir, 'predict.tf_record')
         filed_based_convert_examples_to_features(predict_examples,label_list,FLAGS.max_seq_length,tokenizer,predict_file,False)
         tf.compat.v1.logging.info("***** Running prediction*****")
         tf.compat.v1.logging.info("  Num examples = %d", len(predict_examples))
@@ -767,7 +819,7 @@ def main(_):
                         labels[label][span] = [item]
             final_results.append(labels)
 
-        result_file = os.path.join(FLAGS.output_dir,'../predict.jsonl')
+        result_file = os.path.join(FLAGS.output_dir,'predict.jsonl')
         with open(result_file,'w') as f:
             for item in final_results:
                 f.write(json.dumps({"label":item},ensure_ascii=False) + '\n')

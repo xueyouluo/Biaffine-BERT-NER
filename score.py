@@ -51,7 +51,7 @@ def get_f1_score(pre_file="ner_predict.json", gold_file="data/thuctc_valid.json"
 
 if __name__ == "__main__":
     f_score, avg = get_f1_score(
-      pre_file="/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/predict.jsonl", 
+      pre_file="/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/biaffine_ner_position/predict.jsonl", 
       gold_file="/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/dev.json")
 
     print(f_score, avg)

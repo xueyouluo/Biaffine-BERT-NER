@@ -203,7 +203,7 @@ class BertModel(object):
 
         # Add positional embeddings and token type embeddings, then layer
         # normalize and perform dropout.
-        self.embedding_output = embedding_postprocessor(
+        self.embedding_output, self.position_embeddings = embedding_postprocessor(
             input_tensor=embedding_output,
             use_token_type=True,
             token_type_ids=token_type_ids,
@@ -267,6 +267,9 @@ class BertModel(object):
 
   def get_all_encoder_layers(self):
     return self.all_encoder_layers
+
+  def get_position_embedding_output(self):
+    return self.position_embeddings
 
   def get_embedding_output(self):
     """Gets output of the embedding lookup (i.e., input to the transformer).
@@ -541,7 +544,7 @@ def embedding_postprocessor(input_tensor,
       output += position_embeddings
 
   output = layer_norm_and_dropout(output, dropout_prob)
-  return output
+  return output, position_embeddings
 
 
 def create_attention_mask_from_input_mask(from_tensor, to_mask):

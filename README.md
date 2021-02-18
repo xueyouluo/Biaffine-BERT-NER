@@ -51,6 +51,54 @@
 比BERT的baseline好一些。当然，看了一下排行榜的其他结果，最好的已经到了82.545【截止20210218】，差距还挺大的。
 
 
+### Focal loss
+
+配置：
+```
+gamma=3
+learning_rate=3e-5
+num_train_epochs=5.0 
+```
+
+训练集指标：
+
+negative_accuracy = 99.96067, positive_accuracy = 74.00737
+
+验证集指标：0.8119
+
+线上指标：80.374
+
+> 比单纯的CE效果好一丢丢
+
+### Dice Loss
+
+没有收敛，估计实现有问题，或者这个场景下不适合。
+
+### Negative Sampling
+
+ 由于负样本过多，因此我们考虑对负样本进行采样，设置比例`neg_sample=0.3`。
+
+训练集指标：
+
+negative_accuracy = 99.93346, positive_accuracy = 83.07946
+
+验证集指标：0.8109
+
+线上未测试，不过个人觉得应该差别不大。
+
+> 结果上看跟baseline基本上没什么差别，不过至少说明大量的负样本其实mask了之后对最终的效果也没有太大的影响，很多负样本是easy examples。因此，focal loss和dice loss这种理论上应该是有提升的。
+> 不过我把训练的epoch设置成了5【训练集的准确率一直在提升】，学习率改大了一点，不知道训练更长时间会不会效果会更好一些。
+
+### Position Info
+
+加入了position的信息，结果如下：
+
+negative_accuracy = 99.97583, positive_accuracy = 77.3444
+
+验证集：0.8119
+
+差别不大。
+
 ## Train & Inference
 
 训练代码参考：train_ner.sh
@@ -58,14 +106,6 @@
 预测代码参考：predict_ner.sh
 
 > 没有把evaluation放在代码中，需要用户自己预测结果，然后跑一下score.py
-
-## TODO
-
-还有一些改进的想法，比如
-
-- [ ] 多加一些特征？
-- [ ] 使用[Dice loss](https://paperswithcode.com/paper/dice-loss-for-data-imbalanced-nlp-tasks)进行改进
-- [ ] 负样本过多，可以考虑进行采样，参考[Empirical Analysis of Unlabeled Entity Problem in Named Entity Recognition](https://arxiv.org/abs/2012.05426)
 
 
 ## Reference
