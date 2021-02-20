@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 export BERT_DIR=/data/xueyou/data/bert_pretrain/chinese_L-12_H-768_A-12
-export OUTPUT_DIR=/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/biaffine_ner_position
+export OUTPUT_DIR=/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/biaffine_ner
 export DATA_DIR=/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed
 
 python run_ner.py \

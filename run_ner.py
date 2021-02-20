@@ -465,12 +465,12 @@ def create_model(bert_config, is_training, input_ids, input_mask,
 
     # Magic Number
     size = 150
-    position_embedding = tf.tile(position_embedding,[batch_size,1,1])
-    position_embedding = tf.stop_gradient(position_embedding)
-    starts = tf.layers.dense(tf.concat([output_layer,position_embedding],axis=-1),size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
-    ends = tf.layers.dense(tf.concat([output_layer,position_embedding],axis=-1),size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
-    # starts = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
-    # ends = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    # position_embedding = tf.tile(position_embedding,[batch_size,1,1])
+    # position_embedding = tf.stop_gradient(position_embedding)
+    # starts = tf.layers.dense(tf.concat([output_layer,position_embedding],axis=-1),size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    # ends = tf.layers.dense(tf.concat([output_layer,position_embedding],axis=-1),size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    starts = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+    ends = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
     
     if is_training:
       starts = tf.nn.dropout(starts,keep_prob=0.9)
@@ -592,6 +592,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint=None, learning_rat
                 total_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=gold_labels,logits=candidate_ner_scores)
 
             if 0.0 < FLAGS.neg_sample < 1.0:
+                # 对负样本进行采样
                 sample_vals = tf.random.uniform(shape=tf.shape(gold_labels))
                 masks = tf.where_v2(tf.logical_and(gold_labels<=0,sample_vals>=FLAGS.neg_sample),0.0,1.0)
                 total_loss = masks * total_loss
@@ -789,13 +790,15 @@ def main(_):
             predict_examples = processor.get_test_examples(FLAGS.data_dir)
         predict_file = os.path.join(FLAGS.output_dir, 'predict.tf_record')
         filed_based_convert_examples_to_features(predict_examples,label_list,FLAGS.max_seq_length,tokenizer,predict_file,False)
+        # 模型实现问题，必须设置batch size为1
+        predict_batch_size = 1
         tf.compat.v1.logging.info("***** Running prediction*****")
         tf.compat.v1.logging.info("  Num examples = %d", len(predict_examples))
-        tf.compat.v1.logging.info("  Batch size = %d", FLAGS.predict_batch_size)
+        tf.compat.v1.logging.info("  Batch size = %d", predict_batch_size)
 
         predict_input_fn = file_based_input_fn_builder(
             input_file=predict_file,
-            batch_size=FLAGS.predict_batch_size,
+            batch_size=predict_batch_size,
             seq_length=FLAGS.max_seq_length,
             is_training=False,
             drop_remainder=False

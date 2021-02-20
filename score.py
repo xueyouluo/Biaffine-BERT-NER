@@ -42,6 +42,7 @@ def get_f1_score(pre_file="ner_predict.json", gold_file="data/thuctc_valid.json"
     labels = ['address', 'book', 'company', 'game', 'government', 'movie', 'name', 'organization', 'position', 'scene']
     sum = 0
     for label in labels:
+        print(label)
         f = get_f1_score_label(pre_lines, gold_lines, label=label)
         f_score[label] = f
         sum += f
@@ -51,7 +52,7 @@ def get_f1_score(pre_file="ner_predict.json", gold_file="data/thuctc_valid.json"
 
 if __name__ == "__main__":
     f_score, avg = get_f1_score(
-      pre_file="/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/biaffine_ner_position/predict.jsonl", 
+      pre_file="/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/biaffine_ner/predict.jsonl", 
       gold_file="/nfs/users/xueyou/data/chinese_nlp/clue_ner/processed/dev.json")
 
     print(f_score, avg)
