@@ -213,6 +213,16 @@ class CLUENERProcessor(DataProcessor):
             new_labels.append((s,e,key))
       return new_labels
 
+class KeyPhraseProcessor(CLUENERProcessor):
+    def get_labels(self):
+        return ['O','X']
+    
+    def get_train_examples(self,data_dir):
+        return super().get_train_examples(data_dir,'train.v2.json')
+    
+    def get_dev_examples(self, data_dir):
+        return super().get_dev_examples(data_dir,'dev.v2.json')
+
 def convert_single_example(ex_index, example, label_list, max_seq_length, tokenizer, is_training):
     label_map = {}
     for (i, label) in enumerate(label_list):
@@ -227,7 +237,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     tokens = [t if t in tokenizer.vocab else tokenizer.wordpiece_tokenizer.unk_token for t in text]
     if len(tokens) >= max_seq_length - 1:
         tokens = tokens[0:(max_seq_length - 2)]
-        labels = labels[0:(max_seq_length - 2)]
+        text = text[0:(max_seq_length - 2)]
 
     ntokens = []
     segment_ids = []
@@ -665,6 +675,7 @@ def main(_):
 
     processors = {
         "cluener": CLUENERProcessor,
+        'keyphrase': KeyPhraseProcessor
     }
     
     if not FLAGS.do_train and not FLAGS.do_eval and not FLAGS.do_predict:

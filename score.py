@@ -28,9 +28,9 @@ def get_f1_score_label(pre_lines, gold_lines, label="organization"):
             if i not in pre:
                 FN += 1
     print(TP, FP, FN)
-    p = TP / (TP + FP)
-    r = TP / (TP + FN)
-    f = 2 * p * r / (p + r)
+    p = (TP / (TP + FP)) if (TP + FP)!=0 else 0.0
+    r = (TP / (TP + FN)) if (TP + FN)!=0 else 0.0
+    f = (2 * p * r / (p + r)) if (p + r)!=0 else 0.0
     print(p, r, f)
     return f
 
