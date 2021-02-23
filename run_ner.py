@@ -16,6 +16,7 @@ import pdb
 
 import tensorflow as tf
 import numpy as np
+import jieba
 
 import modeling
 import optimization
@@ -145,12 +146,13 @@ class InputExample(object):
 class InputFeatures(object):
     """A single set of features of data."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, span_mask, gold_labels ):
+    def __init__(self, input_ids, input_mask, segment_ids, span_mask, cut_ids, gold_labels ):
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
         self.span_mask = span_mask
         self.gold_labels = gold_labels
+        self.cut_ids = cut_ids
 
 
 class DataProcessor(object):
@@ -223,6 +225,24 @@ class KeyPhraseProcessor(CLUENERProcessor):
     def get_dev_examples(self, data_dir):
         return super().get_dev_examples(data_dir,'dev.v2.json')
 
+def segmentation_info(text):
+    label_list = ['O','B','E','S']
+    label_map = {}
+    for (i, label) in enumerate(label_list):
+        label_map[label] = i
+    tags = ['O'] * len(text)
+    tokens = jieba.lcut(text)
+    i = 0
+    for token in tokens:
+        size = len(token)
+        if size == 1:
+            tags[i+size-1] = 'S'
+        else:
+            tags[i] = 'B'
+            tags[i+size-1] = 'E'
+        i+=size
+    return [label_map[t] for t in tags]
+
 def convert_single_example(ex_index, example, label_list, max_seq_length, tokenizer, is_training):
     label_map = {}
     for (i, label) in enumerate(label_list):
@@ -239,6 +259,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         tokens = tokens[0:(max_seq_length - 2)]
         text = text[0:(max_seq_length - 2)]
 
+    cut_ids = [0] + segmentation_info(text) + [0]
     ntokens = []
     segment_ids = []
     span_mask = []
@@ -254,18 +275,23 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     segment_ids.append(0)
     span_mask.append(0)
 
+
     input_ids = tokenizer.convert_tokens_to_ids(ntokens)
+    assert len(cut_ids) == len(input_ids)
+
     input_mask = [1] * len(input_ids)
     while len(input_ids) < max_seq_length:
         input_ids.append(0)
         input_mask.append(0)
         segment_ids.append(0)
         span_mask.append(0)
+        cut_ids.append(0)
 
     assert len(input_ids) == max_seq_length
     assert len(input_mask) == max_seq_length
     assert len(segment_ids) == max_seq_length
     assert len(span_mask) == max_seq_length
+    assert len(cut_ids) == max_seq_length
 
     gold_labels = []
     if is_training:
@@ -280,6 +306,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
           tf.compat.v1.logging.info("tokens: %s" % " ".join(
               [tokenization.printable_text(x) for x in tokens]))
           tf.compat.v1.logging.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+          tf.compat.v1.logging.info('cut_ids: %s' % " ".join([str(x) for x in cut_ids]))
           tf.compat.v1.logging.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
           tf.compat.v1.logging.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
           tf.compat.v1.logging.info("span_mask: %s" % " ".join([str(x) for x in span_mask]))
@@ -292,6 +319,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         input_mask=input_mask,
         segment_ids=segment_ids,
         span_mask=span_mask,
+        cut_ids=cut_ids,
         gold_labels=gold_labels,
     )
     return feature
@@ -314,6 +342,7 @@ def filed_based_convert_examples_to_features(
         features["input_mask"] = create_int_feature(feature.input_mask)
         features["segment_ids"] = create_int_feature(feature.segment_ids)
         features['span_mask'] = create_int_feature(feature.span_mask)
+        features['cut_ids'] = create_int_feature(feature.cut_ids)
         features['gold_labels'] = create_int_feature(feature.gold_labels)
 
         tf_example = tf.train.Example(features=tf.train.Features(feature=features))
@@ -325,6 +354,7 @@ def file_based_input_fn_builder(input_file, batch_size, seq_length, is_training,
         "input_mask": tf.io.FixedLenFeature([seq_length], tf.int64),
         "segment_ids": tf.io.FixedLenFeature([seq_length], tf.int64),
         "span_mask": tf.io.FixedLenFeature([seq_length], tf.int64),
+        "cut_ids": tf.io.FixedLenFeature([seq_length], tf.int64),
         "gold_labels": tf.io.VarLenFeature(tf.int64)
     }
 
@@ -356,6 +386,7 @@ def file_based_input_fn_builder(input_file, batch_size, seq_length, is_training,
             "input_mask": tf.TensorShape([seq_length]),
             "segment_ids": tf.TensorShape([seq_length]),
             "span_mask": tf.TensorShape([seq_length]),
+            "cut_ids": tf.TensorShape([seq_length]),
             "gold_labels": tf.TensorShape([None])
           },
           padding_values={
@@ -363,6 +394,7 @@ def file_based_input_fn_builder(input_file, batch_size, seq_length, is_training,
               "input_mask":0,
               "segment_ids":0,
               'span_mask':0,
+              'cut_ids':0,
               'gold_labels':-1
           },
           drop_remainder=drop_remainder
@@ -452,7 +484,7 @@ def biaffine_mapping(vector_set_1,
     return bilinear_mapping
 
 def create_model(bert_config, is_training, input_ids, input_mask,
-                 segment_ids, span_mask, num_labels):
+                 segment_ids, span_mask, num_labels,cut_ids=None):
     model = modeling.BertModel(
         config=bert_config,
         is_training=is_training,
@@ -481,6 +513,12 @@ def create_model(bert_config, is_training, input_ids, input_mask,
     # ends = tf.layers.dense(tf.concat([output_layer,position_embedding],axis=-1),size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
     starts = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
     ends = tf.layers.dense(output_layer,size,kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+
+    # add cut info
+    if cut_ids is not None:
+        segment_embeddings,_ = modeling.embedding_lookup(cut_ids,4,embedding_size=size,word_embedding_name='segmentation_embeddings')
+        starts += segment_embeddings
+        ends += segment_embeddings
     
     if is_training:
       starts = tf.nn.dropout(starts,keep_prob=0.9)
@@ -521,7 +559,6 @@ def focal_loss(logits, labels, gamma=3):
     loss = -labels*tf.pow((1-y_pred),gamma)*tf.log(y_pred)
     return loss
 
-
 def self_adjust_dice_loss(logits,
                           labels,
                           alpha=1.0,
@@ -543,7 +580,6 @@ def self_adjust_dice_loss(logits,
     loss = 1 - (2 * probs_with_factor + gamma) / (probs_with_factor + 1 + gamma)
     return loss
 
-
 def model_fn_builder(bert_config, num_labels, init_checkpoint=None, learning_rate=None,
                      num_train_steps=None, num_warmup_steps=None,
                      use_one_hot_embeddings=False, hvd=None, amp=False):
@@ -555,10 +591,11 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint=None, learning_rat
         input_mask = features["input_mask"]
         segment_ids = features["segment_ids"]
         span_mask = features["span_mask"]
+        cut_ids = features['cut_ids']
         is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
         candidate_ner_scores = create_model(
-            bert_config, is_training, input_ids, input_mask, segment_ids, span_mask,num_labels)
+            bert_config, is_training, input_ids, input_mask, segment_ids, span_mask,num_labels,cut_ids)
         tvars = tf.trainable_variables()
         initialized_variable_names = {}
         if init_checkpoint and (hvd is None or hvd.rank() == 0):
@@ -663,7 +700,6 @@ def get_pred_ner(text, span_scores, is_flat_ner=True):
         else:
             sent_pred_mentions.append((ns,ne,t,[float(x) for x in score.flat]))
     return sent_pred_mentions
-
 
 def main(_):
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
