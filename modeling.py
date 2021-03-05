@@ -145,7 +145,7 @@ class BertModel(object):
                input_ids,
                input_mask=None,
                token_type_ids=None,
-               use_one_hot_embeddings=True,
+               use_one_hot_embeddings=False,
                use_fgm=False,
                perturbation=None,
                scope='bert'):

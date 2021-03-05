@@ -99,6 +99,15 @@ negative_accuracy = 99.97583, positive_accuracy = 77.3444
 
 效果降了一个点。
 
+### Don't stop pretrain
+
+用cluener的数据进行bert的基础上继续预训练，再用训练好的模型finetune NER任务。
+
+negative_accuracy = 99.97762, positive_accuracy = 78.11106
+
+验证集：0.81297 
+
+千分点的提高，感觉不是很显著，甚至可能是随机的结果。
 
 ## Bad Cases分析
 
