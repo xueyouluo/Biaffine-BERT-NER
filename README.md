@@ -1,5 +1,9 @@
 # Biaffine-BERT-NER
 
+## Update
+
+**基于这套代码，我在CCKS2021中文NLP地址要素解析比赛上获得了初赛第一，复赛第三的成绩，说明这个方法还是有效的，等比赛最终结束后我会更新代码。**
+
 ## Introduction
 
 最近看到一些NER的论文，从传统的BIO预测变成了指针预测和span预测等，而且效果还不错。尤其看到一篇《[Named Entity Recognition as Dependency Parsing](https://www.aclweb.org/anthology/2020.acl-main.577/)》，将NER预测改为预测一个矩阵的方法，与我原来在做之江杯的评论比赛时实现过的关系预测非常接近，但是扩展到了可以预测多个类别，而且原来这个还有个专门的称呼叫Biaffine，于是自己借鉴原作者的实现自己改写了一下。
